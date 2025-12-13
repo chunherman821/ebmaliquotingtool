@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDBM Aliquoting Tool - NICU</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f8f9fa; }
+        h1, h2 { color: #2c3e50; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background: #e9ecef; }
+        input { width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .remove-btn { background: #dc3545; }
+        .remove-btn:hover { background: #c82333; }
+        .summary { background: #d4edda; padding: 15px; border-radius: 8px; margin-top: 20px; }
+        .warning { background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 20px; color: #856404; }
+        .print-btn { background: #28a745; margin-top: 20px; padding: 10px 20px; font-size: 16px; }
+        @media print { body { margin: 0; } .no-print { display: none; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDBM Aliquoting Tool</h1>
+        <p><strong>Pasteurised Donor Breast Milk (PDBM) Calculator for NICU</strong></p>
+        <p>Date: <span id="current-date"></span></p>
+
+        <h2>Baby Feeding Details</h2>
+        <table id="babies-table">
+            <thead>
+                <tr>
+                    <th>Baby ID / Name</th>
+                    <th>Feeding Regime (ml)</th>
+                    <th>EBM Available (ml)</th>
+                    <th>PDBM Needed (ml)</th>
+                    <th class="no-print">Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><input type="text" class="baby-id" placeholder="e.g. Baby A"></td>
+                    <td><input type="number" class="feeding" min="0" value="0"></td>
+                    <td><input type="number" class="ebm" min="0" value="0"></td>
+                    <td class="pdbm">0</td>
+                    <td class="no-print"><button class="remove-btn">Remove</button></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <button id="add-baby" class="no-print">Add Baby</button>
+        <button id="print-btn" class="print-btn no-print">Print / Save as PDF</button>
+
+        <div class="summary">
+            <h2>Summary</h2>
+            <p><strong>Total PDBM Required:</strong> <span id="total-pdbm">0</span> ml</p>
+            <p><strong>Recommended Bottles:</strong></p>
+            <ul>
+                <li>50 ml bottles: <span id="bottles-50">0</span></li>
+                <li>130 ml bottles: <span id="bottles-130">0</span></li>
+            </ul>
+            <p><strong>Total volume from bottles:</strong> <span id="total-volume">0</span> ml</p>
+            <p><strong>Estimated waste:</strong> <span id="waste">0</span> ml <span id="waste-note"></span></p>
+        </div>
+
+        <div class="warning">
+            <strong>Important Reminders:</strong><br>
+            • Do <strong>NOT mix milk from different bottles</strong> (risk of contamination).<br>
+            • Always aim to <strong>minimise waste</strong> – disciplinary action may follow excessive waste.<br>
+            • One bottle can be divided among multiple babies, but never combine contents of two bottles.
+        </div>
+    </div>
+
+    <script>
+        // Set current date
+        document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-GB');
+
+        const tableBody = document.querySelector('#babies-table tbody');
+
+        function updateCalculations() {
+            let totalPDBM = 0;
+
+            document.querySelectorAll('#babies-table tr').forEach(row => {
+                const feeding = parseFloat(row.querySelector('.feeding').value) || 0;
+                const ebm = parseFloat(row.querySelector('.ebm').value) || 0;
+                const pdbmNeeded = Math.max(0, feeding - ebm);
+                row.querySelector('.pdbm').textContent = pdbmNeeded;
+                totalPDBM += pdbmNeeded;
+            });
+
+            document.getElementById('total-pdbm').textContent = totalPDBM;
+
+            const { bottles50, bottles130, waste } = findOptimalBottles(totalPDBM);
+
+            document.getElementById('bottles-50').textContent = bottles50;
+            document.getElementById('bottles-130').textContent = bottles130;
+            document.getElementById('total-volume').textContent = bottles50 * 50 + bottles130 * 130;
+            document.getElementById('waste').textContent = waste;
+
+            const wasteNote = waste === 0 ? '(Perfect – no waste!)' : waste < 50 ? '(Acceptable)' : '(Consider adjusting if possible)';
+            document.getElementById('waste-note').textContent = wasteNote;
+        }
+
+        function findOptimalBottles(total) {
+            if (total === 0) return { bottles50: 0, bottles130: 0, waste: 0 };
+
+            let best = { bottles50: 0, bottles130: Math.ceil(total / 130), waste: Math.ceil(total / 130) * 130 - total };
+            let minWaste = best.waste;
+
+            // Try different numbers of 130ml bottles
+            const max130 = Math.ceil(total / 130) + 2;
+            for (let y = 0; y <= max130; y++) {
+                const remaining = total - y * 130;
+                if (remaining <= 0) {
+                    const waste = -remaining;
+                    if (waste < minWaste || (waste === minWaste && y < best.bottles130)) {
+                        minWaste = waste;
+                        best = { bottles50: 0, bottles130: y, waste };
+                    }
+                    continue;
+                }
+                const x = Math.ceil(remaining / 50);
+                const waste = x * 50 + y * 130 - total;
+                const totalBottles = x + y;
+                if (waste < minWaste || (waste === minWaste && totalBottles < best.bottles50 + best.bottles130)) {
+                    minWaste = waste;
+                    best = { bottles50: x, bottles130: y, waste };
+                }
+            }
+            return best;
+        }
+
+        // Event listeners
+        tableBody.addEventListener('input', updateCalculations);
+
+        document.getElementById('add-baby').addEventListener('click', () => {
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="text" class="baby-id" placeholder="e.g. Baby B"></td>
+                <td><input type="number" class="feeding" min="0" value="0"></td>
+                <td><input type="number" class="ebm" min="0" value="0"></td>
+                <td class="pdbm">0</td>
+                <td class="no-print"><button class="remove-btn">Remove</button></td>
+            `;
+            tableBody.appendChild(newRow);
+            updateCalculations();
+        });
+
+        tableBody.addEventListener('click', e => {
+            if (e.target.classList.contains('remove-btn')) {
+                if (tableBody.children.length > 1) {
+                    e.target.closest('tr').remove();
+                    updateCalculations();
+                } else {
+                    alert("At least one baby row must remain.");
+                }
+            }
+        });
+
+        document.getElementById('print-btn').addEventListener('click', () => window.print());
+
+        // Initial calculation
+        updateCalculations();
+    </script>
+</body>
+</html>
