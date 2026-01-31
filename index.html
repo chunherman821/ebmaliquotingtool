@@ -109,7 +109,7 @@
                         <th>EBM available (ml x bottles)</th>
                         <th>Total EBM (ml)</th>
                         <th>PDBM required (ml)</th>
-                        <th>PDBM bottles used (50 / 125)</th>
+                        <th>PDBM bottles used (shared 50 / 125)</th>
                         <th>Notes</th>
                         <th class="no-print">Action</th>
                     </tr>
@@ -161,8 +161,8 @@
             </table>
         </div>
         <p class="subtext">
-            Per-baby bottle counts show bottles that include at least one feed for that baby.
-            Because bottles can be shared, totals across babies can exceed the overall bottle count.
+            Per-baby bottle counts show shared bottles that include at least one feed for that baby.
+            These counts are not additive and will not match the overall total.
         </p>
 
         <div class="controls no-print">
@@ -175,7 +175,7 @@
             <h2>Overall summary</h2>
             <p><strong>Total PDBM required:</strong> <span id="total-pdbm">0</span> ml</p>
             <p><strong>Total EBM available:</strong> <span id="total-ebm">0</span> ml</p>
-            <p><strong>Recommended PDBM bottles (overall):</strong></p>
+            <p><strong>Recommended PDBM bottles (overall, minimum waste first):</strong></p>
             <ul>
                 <li>50 ml bottles: <span id="bottles-50">0</span></li>
                 <li>125 ml bottles: <span id="bottles-125">0</span></li>
@@ -192,7 +192,7 @@
             <ul>
                 <li>EBM bottles are single-use: one bottle can cover one feed only. Any leftover EBM is wasted.</li>
                 <li>PDBM from one bottle can be split across multiple feeds/babies, but a feed cannot combine PDBM from two bottles.</li>
-                <li>The algorithm aims to use the fewest bottles and then minimise waste. For small numbers of PDBM feeds it uses an exact search; for larger numbers it uses a best-fit heuristic.</li>
+                <li>The algorithm aims to minimise waste first, then minimise bottle count. For small numbers of PDBM feeds it uses an exact search; for larger numbers it uses a heuristic with splitting into 50 ml bottles when possible.</li>
             </ul>
         </div>
 
@@ -210,6 +210,7 @@
         const SMALL_BOTTLE = 50;
         const LARGE_BOTTLE = 125;
         const EXACT_LIMIT = 18;
+        const SCALE = 10;
 
         document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-GB');
 
@@ -385,9 +386,10 @@
 
             const allocation = packItems(allocationItems);
             const bins = allocation.bins;
-            const bottles50 = bins.filter((bin) => bin.used <= SMALL_BOTTLE).length;
-            const bottles125 = bins.length - bottles50;
-            const totalVolume = bottles50 * SMALL_BOTTLE + bottles125 * LARGE_BOTTLE;
+            const packingScore = scorePacking(bins);
+            const bottles50 = bins.filter((bin) => bin.capacity === SMALL_BOTTLE).length;
+            const bottles125 = bins.filter((bin) => bin.capacity === LARGE_BOTTLE).length;
+            const totalVolume = packingScore.totalCapacity;
             const waste = Math.max(0, totalVolume - totalPdbm);
 
             document.getElementById('bottles-50').textContent = String(bottles50);
@@ -400,10 +402,9 @@
 
             const perBabyCounts = babies.map(() => ({ b50: 0, b125: 0 }));
             bins.forEach((bin) => {
-                const capacity = bin.used <= SMALL_BOTTLE ? SMALL_BOTTLE : LARGE_BOTTLE;
                 const babySet = new Set(bin.items.map((item) => item.babyIndex));
                 babySet.forEach((babyIndex) => {
-                    if (capacity === SMALL_BOTTLE) {
+                    if (bin.capacity === SMALL_BOTTLE) {
                         perBabyCounts[babyIndex].b50 += 1;
                     } else {
                         perBabyCounts[babyIndex].b125 += 1;
@@ -426,31 +427,71 @@
             if (sorted.length <= EXACT_LIMIT) {
                 const exact = exactPack(sorted);
                 if (exact) {
-                    return { bins: exact.bins, method: 'Exact search' };
+                    return { bins: exact.bins, method: 'Exact search (min waste)' };
                 }
             }
 
-            const bestFit = bestFitPack(sorted);
-            const firstFit = firstFitPack(sorted);
-            const bestFitScore = scorePacking(bestFit.bins);
-            const firstFitScore = scorePacking(firstFit.bins);
+            const candidates = [];
+            const bestFit125 = bestFitPack(sorted, LARGE_BOTTLE);
+            if (bestFit125) {
+                candidates.push({ bins: splitBinsTo50(bestFit125.bins), method: 'Best-fit 125 + split' });
+            }
+            const firstFit125 = firstFitPack(sorted, LARGE_BOTTLE);
+            if (firstFit125) {
+                candidates.push({ bins: splitBinsTo50(firstFit125.bins), method: 'First-fit 125 + split' });
+            }
 
-            if (firstFitScore.count < bestFitScore.count) {
-                return { bins: firstFit.bins, method: 'First-fit decreasing' };
+            const allSmallOk = sorted.every((item) => item.size <= SMALL_BOTTLE);
+            if (allSmallOk) {
+                const bestFit50 = bestFitPack(sorted, SMALL_BOTTLE);
+                if (bestFit50) {
+                    candidates.push({ bins: bestFit50.bins, method: 'Best-fit 50' });
+                }
+                const firstFit50 = firstFitPack(sorted, SMALL_BOTTLE);
+                if (firstFit50) {
+                    candidates.push({ bins: firstFit50.bins, method: 'First-fit 50' });
+                }
+                const preferSmall = variableBestFitPack(sorted, true);
+                candidates.push({ bins: splitBinsTo50(preferSmall.bins), method: 'Hybrid (prefer 50)' });
+                const preferLarge = variableBestFitPack(sorted, false);
+                candidates.push({ bins: splitBinsTo50(preferLarge.bins), method: 'Hybrid (prefer 125)' });
+            } else {
+                const hybrid = variableBestFitPack(sorted, true);
+                candidates.push({ bins: splitBinsTo50(hybrid.bins), method: 'Hybrid (prefer 50)' });
             }
-            if (firstFitScore.count === bestFitScore.count && firstFitScore.waste < bestFitScore.waste) {
-                return { bins: firstFit.bins, method: 'First-fit decreasing' };
+
+            let best = candidates[0];
+            let bestScore = scorePacking(best.bins);
+            for (let i = 1; i < candidates.length; i++) {
+                const score = scorePacking(candidates[i].bins);
+                if (isBetterScore(score, bestScore)) {
+                    best = candidates[i];
+                    bestScore = score;
+                }
             }
-            return { bins: bestFit.bins, method: 'Best-fit decreasing' };
+            return best;
         }
 
-        function bestFitPack(items) {
+        function isBetterScore(candidate, current) {
+            if (candidate.totalCapacity !== current.totalCapacity) {
+                return candidate.totalCapacity < current.totalCapacity;
+            }
+            if (candidate.count !== current.count) {
+                return candidate.count < current.count;
+            }
+            return candidate.waste < current.waste;
+        }
+
+        function bestFitPack(items, capacity) {
             const bins = [];
-            items.forEach((item) => {
+            for (const item of items) {
+                if (item.size > capacity) {
+                    return null;
+                }
                 let bestIndex = -1;
                 let bestRemaining = Infinity;
                 bins.forEach((bin, index) => {
-                    const remaining = LARGE_BOTTLE - bin.used;
+                    const remaining = bin.capacity - bin.used;
                     if (item.size <= remaining && remaining - item.size < bestRemaining) {
                         bestRemaining = remaining - item.size;
                         bestIndex = index;
@@ -461,18 +502,21 @@
                     bins[bestIndex].used += item.size;
                     bins[bestIndex].items.push(item);
                 } else {
-                    bins.push({ used: item.size, items: [item] });
+                    bins.push({ capacity, used: item.size, items: [item] });
                 }
-            });
+            }
             return { bins };
         }
 
-        function firstFitPack(items) {
+        function firstFitPack(items, capacity) {
             const bins = [];
-            items.forEach((item) => {
+            for (const item of items) {
+                if (item.size > capacity) {
+                    return null;
+                }
                 let placed = false;
                 for (let i = 0; i < bins.length; i++) {
-                    if (bins[i].used + item.size <= LARGE_BOTTLE) {
+                    if (bins[i].used + item.size <= bins[i].capacity) {
                         bins[i].used += item.size;
                         bins[i].items.push(item);
                         placed = true;
@@ -480,36 +524,153 @@
                     }
                 }
                 if (!placed) {
-                    bins.push({ used: item.size, items: [item] });
+                    bins.push({ capacity, used: item.size, items: [item] });
+                }
+            }
+            return { bins };
+        }
+
+        function variableBestFitPack(items, preferSmall) {
+            const bins = [];
+            items.forEach((item) => {
+                let bestIndex = -1;
+                let bestRemaining = Infinity;
+                bins.forEach((bin, index) => {
+                    const remaining = bin.capacity - bin.used;
+                    if (item.size <= remaining && remaining - item.size < bestRemaining) {
+                        bestRemaining = remaining - item.size;
+                        bestIndex = index;
+                    }
+                });
+
+                if (bestIndex >= 0) {
+                    bins[bestIndex].used += item.size;
+                    bins[bestIndex].items.push(item);
+                } else {
+                    const capacity = item.size > SMALL_BOTTLE ? LARGE_BOTTLE : (preferSmall ? SMALL_BOTTLE : LARGE_BOTTLE);
+                    bins.push({ capacity, used: item.size, items: [item] });
                 }
             });
             return { bins };
         }
 
+        function splitBinsTo50(bins) {
+            const result = [];
+            bins.forEach((bin) => {
+                if (bin.capacity === SMALL_BOTTLE) {
+                    result.push(cloneBin(bin));
+                    return;
+                }
+                if (bin.used <= SMALL_BOTTLE) {
+                    result.push({ capacity: SMALL_BOTTLE, used: bin.used, items: bin.items.slice() });
+                    return;
+                }
+                if (bin.used <= SMALL_BOTTLE * 2) {
+                    const split = splitItemsIntoTwo50(bin.items);
+                    if (split) {
+                        result.push(split.binA, split.binB);
+                        return;
+                    }
+                }
+                result.push(cloneBin(bin));
+            });
+            return result;
+        }
+
+        function splitItemsIntoTwo50(items) {
+            const limitInt = Math.round(SMALL_BOTTLE * SCALE);
+            const sizesInt = items.map((item) => Math.round(item.size * SCALE));
+            const totalInt = sizesInt.reduce((sum, size) => sum + size, 0);
+            if (totalInt > limitInt * 2) return null;
+            if (sizesInt.some((size) => size > limitInt)) return null;
+
+            const minTarget = Math.max(totalInt - limitInt, 0);
+            const maxTarget = Math.min(limitInt, totalInt);
+            const dp = Array(limitInt + 1).fill(-1);
+            const prev = Array(limitInt + 1).fill(-1);
+            dp[0] = -2;
+
+            for (let i = 0; i < sizesInt.length; i++) {
+                const size = sizesInt[i];
+                for (let sum = limitInt; sum >= size; sum--) {
+                    if (dp[sum] === -1 && dp[sum - size] !== -1) {
+                        dp[sum] = i;
+                        prev[sum] = sum - size;
+                    }
+                }
+            }
+
+            let target = -1;
+            for (let sum = maxTarget; sum >= minTarget; sum--) {
+                if (dp[sum] !== -1) {
+                    target = sum;
+                    break;
+                }
+            }
+            if (target === -1) return null;
+
+            const usedFlags = new Array(items.length).fill(false);
+            let current = target;
+            while (current > 0) {
+                const idx = dp[current];
+                if (idx < 0) break;
+                usedFlags[idx] = true;
+                current = prev[current];
+            }
+
+            const binAItems = [];
+            const binBItems = [];
+            let usedA = 0;
+            let usedB = 0;
+            items.forEach((item, index) => {
+                if (usedFlags[index]) {
+                    binAItems.push(item);
+                    usedA += item.size;
+                } else {
+                    binBItems.push(item);
+                    usedB += item.size;
+                }
+            });
+
+            if (usedB === 0) {
+                return null;
+            }
+
+            return {
+                binA: { capacity: SMALL_BOTTLE, used: usedA, items: binAItems },
+                binB: { capacity: SMALL_BOTTLE, used: usedB, items: binBItems }
+            };
+        }
+
         function exactPack(items) {
             let bestBins = null;
+            let bestCapacity = Infinity;
             let bestCount = Infinity;
-            let bestWaste = Infinity;
             const totalVolume = items.reduce((sum, item) => sum + item.size, 0);
-            const lowerBound = Math.ceil(totalVolume / LARGE_BOTTLE);
 
-            function dfs(index, bins, usedVolume) {
+            const heuristic = bestFitPack(items, LARGE_BOTTLE);
+            if (heuristic) {
+                const improved = splitBinsTo50(heuristic.bins);
+                const initialScore = scorePacking(improved);
+                bestCapacity = initialScore.totalCapacity;
+                bestCount = initialScore.count;
+                bestBins = cloneBins(improved);
+            }
+
+            function dfs(index, bins, usedVolume, capacitySum) {
                 const remainingVolume = totalVolume - usedVolume;
-                const minAdditional = Math.ceil(remainingVolume / LARGE_BOTTLE);
-                if (bins.length + minAdditional > bestCount) {
+                if (capacitySum >= bestCapacity) {
+                    return;
+                }
+                if (capacitySum + remainingVolume > bestCapacity) {
                     return;
                 }
                 if (index === items.length) {
-                    const waste = scorePacking(bins).waste;
-                    if (bins.length < bestCount || (bins.length === bestCount && waste < bestWaste)) {
+                    if (capacitySum < bestCapacity || (capacitySum === bestCapacity && bins.length < bestCount)) {
+                        bestCapacity = capacitySum;
                         bestCount = bins.length;
-                        bestWaste = waste;
                         bestBins = cloneBins(bins);
                     }
-                    return;
-                }
-
-                if (bins.length === lowerBound && bestCount === lowerBound && bestWaste === 0) {
                     return;
                 }
 
@@ -517,40 +678,60 @@
                 const seen = new Set();
                 for (let i = 0; i < bins.length; i++) {
                     const bin = bins[i];
-                    if (bin.used + item.size > LARGE_BOTTLE) continue;
-                    if (seen.has(bin.used)) continue;
-                    seen.add(bin.used);
+                    if (bin.used + item.size > bin.capacity) continue;
+                    const key = `${bin.used}|${bin.capacity}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
 
                     bin.used += item.size;
                     bin.items.push(item);
-                    dfs(index + 1, bins, usedVolume + item.size);
+                    dfs(index + 1, bins, usedVolume + item.size, capacitySum);
                     bin.items.pop();
                     bin.used -= item.size;
                 }
 
-                bins.push({ used: item.size, items: [item] });
-                dfs(index + 1, bins, usedVolume + item.size);
-                bins.pop();
+                if (item.size <= SMALL_BOTTLE) {
+                    const capacities = [SMALL_BOTTLE, LARGE_BOTTLE];
+                    for (const capacity of capacities) {
+                        bins.push({ capacity, used: item.size, items: [item] });
+                        dfs(index + 1, bins, usedVolume + item.size, capacitySum + capacity);
+                        bins.pop();
+                    }
+                } else {
+                    bins.push({ capacity: LARGE_BOTTLE, used: item.size, items: [item] });
+                    dfs(index + 1, bins, usedVolume + item.size, capacitySum + LARGE_BOTTLE);
+                    bins.pop();
+                }
             }
 
-            dfs(0, [], 0);
+            dfs(0, [], 0, 0);
             return bestBins ? { bins: bestBins } : null;
         }
 
         function scorePacking(bins) {
-            let waste = 0;
+            let totalCapacity = 0;
+            let totalUsed = 0;
             bins.forEach((bin) => {
-                const capacity = bin.used <= SMALL_BOTTLE ? SMALL_BOTTLE : LARGE_BOTTLE;
-                waste += capacity - bin.used;
+                totalCapacity += bin.capacity;
+                totalUsed += bin.used;
             });
-            return { count: bins.length, waste };
+            return {
+                totalCapacity,
+                waste: Math.max(0, totalCapacity - totalUsed),
+                count: bins.length
+            };
+        }
+
+        function cloneBin(bin) {
+            return {
+                capacity: bin.capacity,
+                used: bin.used,
+                items: bin.items.slice()
+            };
         }
 
         function cloneBins(bins) {
-            return bins.map((bin) => ({
-                used: bin.used,
-                items: bin.items.slice()
-            }));
+            return bins.map((bin) => cloneBin(bin));
         }
 
         function createRow() {
