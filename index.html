@@ -87,6 +87,37 @@
             color: #6c757d;
             text-align: left;
         }
+        .allocation {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+        }
+        .allocation-list { margin-top: 10px; }
+        .bottle-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            background: #fdfdfe;
+        }
+        .bottle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .bottle-items {
+            margin: 8px 0 0 18px;
+            text-align: left;
+        }
+        .bottle-items li { margin-bottom: 4px; }
+        .allocation-empty {
+            color: #6c757d;
+            margin: 0;
+        }
         @media print {
             body { margin: 0; }
             .no-print { display: none; }
@@ -187,6 +218,12 @@
 
         <div id="allocation-warning" class="warning hidden"></div>
 
+        <div class="allocation">
+            <h2>Bottle-by-bottle allocation</h2>
+            <p class="subtext">Each feed listed uses PDBM from one bottle only.</p>
+            <div id="allocation-list" class="allocation-list"></div>
+        </div>
+
         <div class="info">
             <h3>Assumptions used in this calculator</h3>
             <ul>
@@ -220,6 +257,7 @@
         const tableBody = document.querySelector('#babies-table tbody');
         const warningEl = document.getElementById('allocation-warning');
         const allocationMethodEl = document.getElementById('allocation-method');
+        const allocationListEl = document.getElementById('allocation-list');
 
         function toNumber(value) {
             const parsed = parseFloat(value);
@@ -270,7 +308,14 @@
                 }
                 if (pdbmForFeed > 0) {
                     const sizeInt = Math.round(pdbmForFeed * SCALE);
-                    items.push({ size: pdbmForFeed, sizeInt, babyIndex: index, bedId });
+                    items.push({
+                        size: pdbmForFeed,
+                        sizeInt,
+                        babyIndex: index,
+                        bedId,
+                        feedNumber: i + 1,
+                        usedEbm: i < usedEbmBottles
+                    });
                     pdbmTotal += pdbmForFeed;
                     if (pdbmForFeed > LARGE_BOTTLE) {
                         overLimit = true;
@@ -357,6 +402,7 @@
                 allocationMethodEl.textContent = 'No PDBM required';
                 warningEl.classList.add('hidden');
                 warningEl.innerHTML = '';
+                setAllocationMessage('No PDBM required.');
                 rows.forEach((row) => {
                     row.querySelector('.pdbm-bottles').textContent = '0 / 0';
                 });
@@ -379,6 +425,7 @@
                 document.getElementById('waste').textContent = 'N/A';
                 document.getElementById('waste-note').textContent = '';
                 allocationMethodEl.textContent = 'Not possible';
+                setAllocationMessage('Allocation not possible. Please adjust feeds or add EBM.');
                 rows.forEach((row) => {
                     row.querySelector('.pdbm-bottles').textContent = 'N/A';
                 });
@@ -403,6 +450,7 @@
             const wasteNote = waste === 0 ? '(No waste)' : waste <= SMALL_BOTTLE ? '(Low waste)' : '(Review if adjustments are possible)';
             document.getElementById('waste-note').textContent = wasteNote;
             allocationMethodEl.textContent = allocation.method;
+            renderAllocationList(bins);
 
             const perBabyCounts = babies.map(() => ({ b50: 0, b125: 0 }));
             bins.forEach((bin) => {
@@ -419,6 +467,70 @@
             rows.forEach((row, index) => {
                 const counts = perBabyCounts[index];
                 row.querySelector('.pdbm-bottles').textContent = `${counts.b50} / ${counts.b125}`;
+            });
+        }
+
+        function setAllocationMessage(message) {
+            allocationListEl.innerHTML = '';
+            const para = document.createElement('p');
+            para.className = 'allocation-empty';
+            para.textContent = message;
+            allocationListEl.appendChild(para);
+        }
+
+        function renderAllocationList(bins) {
+            allocationListEl.innerHTML = '';
+            if (!bins || bins.length === 0) {
+                setAllocationMessage('No PDBM required.');
+                return;
+            }
+
+            const sortedBins = [...bins].sort((a, b) => {
+                if (b.capacity !== a.capacity) return b.capacity - a.capacity;
+                return b.used - a.used;
+            });
+
+            sortedBins.forEach((bin, index) => {
+                const card = document.createElement('div');
+                card.className = 'bottle-card';
+
+                const header = document.createElement('div');
+                header.className = 'bottle-header';
+
+                const title = document.createElement('strong');
+                title.textContent = `Bottle ${index + 1} (${bin.capacity} ml)`;
+
+                const summary = document.createElement('span');
+                const waste = bin.capacity - bin.used;
+                summary.textContent = `${formatMl(bin.used)} ml used, ${formatMl(waste)} ml waste`;
+
+                header.appendChild(title);
+                header.appendChild(summary);
+                card.appendChild(header);
+
+                const list = document.createElement('ul');
+                list.className = 'bottle-items';
+
+                const sortedItems = [...bin.items].sort((a, b) => {
+                    if (a.babyIndex !== b.babyIndex) return a.babyIndex - b.babyIndex;
+                    return a.feedNumber - b.feedNumber;
+                });
+
+                sortedItems.forEach((item) => {
+                    const li = document.createElement('li');
+                    const ebmNote = item.usedEbm ? ' (with EBM)' : '';
+                    li.textContent = `Bed ID ${item.bedId} - Feed ${item.feedNumber}: ${formatMl(item.size)} ml PDBM${ebmNote}`;
+                    list.appendChild(li);
+                });
+
+                if (sortedItems.length === 0) {
+                    const empty = document.createElement('li');
+                    empty.textContent = 'No feeds assigned.';
+                    list.appendChild(empty);
+                }
+
+                card.appendChild(list);
+                allocationListEl.appendChild(card);
             });
         }
 
