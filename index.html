@@ -211,6 +211,9 @@
         const LARGE_BOTTLE = 125;
         const EXACT_LIMIT = 18;
         const SCALE = 10;
+        const SMALL_CAPACITY_INT = SMALL_BOTTLE * SCALE;
+        const LARGE_CAPACITY_INT = LARGE_BOTTLE * SCALE;
+        const CAPACITY_STEP_INT = 25 * SCALE;
 
         document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-GB');
 
@@ -266,7 +269,8 @@
                     pdbmForFeed = Math.max(0, feedVolume - ebmVolume);
                 }
                 if (pdbmForFeed > 0) {
-                    items.push({ size: pdbmForFeed, babyIndex: index, bedId });
+                    const sizeInt = Math.round(pdbmForFeed * SCALE);
+                    items.push({ size: pdbmForFeed, sizeInt, babyIndex: index, bedId });
                     pdbmTotal += pdbmForFeed;
                     if (pdbmForFeed > LARGE_BOTTLE) {
                         overLimit = true;
@@ -419,7 +423,7 @@
         }
 
         function packItems(items) {
-            const sorted = [...items].sort((a, b) => b.size - a.size);
+            const sorted = [...items].sort((a, b) => b.sizeInt - a.sizeInt);
             if (sorted.length === 0) {
                 return { bins: [], method: 'No PDBM required' };
             }
@@ -431,6 +435,12 @@
                 }
             }
 
+            const heuristic = heuristicPack(sorted);
+            const search = capacitySearchPack(sorted, heuristic, 120);
+            return search || heuristic;
+        }
+
+        function heuristicPack(sorted) {
             const candidates = [];
             const bestFit125 = bestFitPack(sorted, LARGE_BOTTLE);
             if (bestFit125) {
@@ -441,7 +451,7 @@
                 candidates.push({ bins: splitBinsTo50(firstFit125.bins), method: 'First-fit 125 + split' });
             }
 
-            const allSmallOk = sorted.every((item) => item.size <= SMALL_BOTTLE);
+            const allSmallOk = sorted.every((item) => item.sizeInt <= SMALL_CAPACITY_INT);
             if (allSmallOk) {
                 const bestFit50 = bestFitPack(sorted, SMALL_BOTTLE);
                 if (bestFit50) {
@@ -472,37 +482,215 @@
             return best;
         }
 
+        function capacitySearchPack(items, fallback, maxSearchMs) {
+            if (!fallback || !fallback.bins || fallback.bins.length === 0) {
+                return null;
+            }
+            const totalVolumeInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            const lowerCapacityInt = minCapacityLowerBoundInt(totalVolumeInt);
+            const fallbackScore = scorePacking(fallback.bins);
+            const upperCapacityInt = fallbackScore.totalCapacityInt;
+            if (!Number.isFinite(upperCapacityInt)) {
+                return null;
+            }
+
+            const deadline = performance.now() + maxSearchMs;
+
+            for (let capacityInt = lowerCapacityInt; capacityInt <= upperCapacityInt; capacityInt += CAPACITY_STEP_INT) {
+                const combos = combosForCapacityInt(capacityInt);
+                for (const combo of combos) {
+                    if (performance.now() > deadline) {
+                        return null;
+                    }
+                    const packed = packFixedBins(items, combo.count50, combo.count125, deadline);
+                    if (packed === null) {
+                        return null;
+                    }
+                    if (packed) {
+                        return { bins: packed.bins, method: 'Capacity search (min waste)' };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function minCapacityLowerBoundInt(totalVolumeInt) {
+            let minCapacityInt = Infinity;
+            const maxLarge = Math.ceil(totalVolumeInt / LARGE_CAPACITY_INT);
+            for (let count125 = 0; count125 <= maxLarge; count125++) {
+                const capacityInt = count125 * LARGE_CAPACITY_INT;
+                const remainingInt = Math.max(0, totalVolumeInt - capacityInt);
+                const count50 = Math.ceil(remainingInt / SMALL_CAPACITY_INT);
+                const candidate = capacityInt + count50 * SMALL_CAPACITY_INT;
+                if (candidate < minCapacityInt) {
+                    minCapacityInt = candidate;
+                }
+            }
+            return minCapacityInt;
+        }
+
+        function combosForCapacityInt(capacityInt) {
+            const combos = [];
+            const maxLarge = Math.floor(capacityInt / LARGE_CAPACITY_INT);
+            for (let count125 = 0; count125 <= maxLarge; count125++) {
+                const remainingInt = capacityInt - count125 * LARGE_CAPACITY_INT;
+                if (remainingInt < 0) continue;
+                if (remainingInt % SMALL_CAPACITY_INT !== 0) continue;
+                const count50 = remainingInt / SMALL_CAPACITY_INT;
+                combos.push({ count50, count125, count: count50 + count125 });
+            }
+            combos.sort((a, b) => a.count - b.count || b.count125 - a.count125);
+            return combos;
+        }
+
+        function packFixedBins(items, count50, count125, deadline) {
+            const bins = [];
+            for (let i = 0; i < count125; i++) {
+                bins.push(createBin(LARGE_BOTTLE));
+            }
+            for (let i = 0; i < count50; i++) {
+                bins.push(createBin(SMALL_BOTTLE));
+            }
+
+            const sorted = [...items].sort((a, b) => b.sizeInt - a.sizeInt);
+            const remainingVolumes = new Array(sorted.length);
+            let running = 0;
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                running += sorted[i].sizeInt;
+                remainingVolumes[i] = running;
+            }
+
+            const memo = new Map();
+
+            function dfs(index) {
+                if (performance.now() > deadline) {
+                    return null;
+                }
+                if (index === sorted.length) {
+                    return true;
+                }
+
+                let remainingCapacityInt = 0;
+                const remainingCaps = [];
+                for (const bin of bins) {
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    remainingCapacityInt += remaining;
+                    remainingCaps.push(remaining);
+                }
+                if (remainingCapacityInt < remainingVolumes[index]) {
+                    return false;
+                }
+
+                remainingCaps.sort((a, b) => b - a);
+                const key = `${index}|${remainingCaps.join(',')}`;
+                if (memo.has(key)) {
+                    return false;
+                }
+
+                const item = sorted[index];
+                const binOptions = [];
+                for (let i = 0; i < bins.length; i++) {
+                    const remaining = bins[i].capacityInt - bins[i].usedInt;
+                    if (remaining >= item.sizeInt) {
+                        binOptions.push({ index: i, remaining });
+                    }
+                }
+                if (binOptions.length === 0) {
+                    memo.set(key, false);
+                    return false;
+                }
+
+                binOptions.sort((a, b) => a.remaining - b.remaining);
+                const tried = new Set();
+                for (const option of binOptions) {
+                    if (tried.has(option.remaining)) {
+                        continue;
+                    }
+                    tried.add(option.remaining);
+                    const bin = bins[option.index];
+                    bin.usedInt += item.sizeInt;
+                    bin.used += item.size;
+                    bin.items.push(item);
+
+                    const outcome = dfs(index + 1);
+                    if (outcome === true) {
+                        return true;
+                    }
+                    if (outcome === null) {
+                        bin.items.pop();
+                        bin.used -= item.size;
+                        bin.usedInt -= item.sizeInt;
+                        return null;
+                    }
+
+                    bin.items.pop();
+                    bin.used -= item.size;
+                    bin.usedInt -= item.sizeInt;
+                }
+
+                memo.set(key, false);
+                return false;
+            }
+
+            const result = dfs(0);
+            if (result === true) {
+                return { bins };
+            }
+            if (result === null) {
+                return null;
+            }
+            return false;
+        }
+
+        function createBin(capacity) {
+            return {
+                capacity,
+                capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                used: 0,
+                usedInt: 0,
+                items: []
+            };
+        }
+
         function isBetterScore(candidate, current) {
-            if (candidate.totalCapacity !== current.totalCapacity) {
-                return candidate.totalCapacity < current.totalCapacity;
+            if (candidate.totalCapacityInt !== current.totalCapacityInt) {
+                return candidate.totalCapacityInt < current.totalCapacityInt;
             }
             if (candidate.count !== current.count) {
                 return candidate.count < current.count;
             }
-            return candidate.waste < current.waste;
+            return candidate.wasteInt < current.wasteInt;
         }
 
         function bestFitPack(items, capacity) {
             const bins = [];
+            const capacityInt = capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT;
             for (const item of items) {
-                if (item.size > capacity) {
+                if (item.sizeInt > capacityInt) {
                     return null;
                 }
                 let bestIndex = -1;
                 let bestRemaining = Infinity;
                 bins.forEach((bin, index) => {
-                    const remaining = bin.capacity - bin.used;
-                    if (item.size <= remaining && remaining - item.size < bestRemaining) {
-                        bestRemaining = remaining - item.size;
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    if (item.sizeInt <= remaining && remaining - item.sizeInt < bestRemaining) {
+                        bestRemaining = remaining - item.sizeInt;
                         bestIndex = index;
                     }
                 });
 
                 if (bestIndex >= 0) {
                     bins[bestIndex].used += item.size;
+                    bins[bestIndex].usedInt += item.sizeInt;
                     bins[bestIndex].items.push(item);
                 } else {
-                    bins.push({ capacity, used: item.size, items: [item] });
+                    bins.push({
+                        capacity,
+                        capacityInt,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
                 }
             }
             return { bins };
@@ -510,21 +698,29 @@
 
         function firstFitPack(items, capacity) {
             const bins = [];
+            const capacityInt = capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT;
             for (const item of items) {
-                if (item.size > capacity) {
+                if (item.sizeInt > capacityInt) {
                     return null;
                 }
                 let placed = false;
                 for (let i = 0; i < bins.length; i++) {
-                    if (bins[i].used + item.size <= bins[i].capacity) {
+                    if (bins[i].usedInt + item.sizeInt <= bins[i].capacityInt) {
                         bins[i].used += item.size;
+                        bins[i].usedInt += item.sizeInt;
                         bins[i].items.push(item);
                         placed = true;
                         break;
                     }
                 }
                 if (!placed) {
-                    bins.push({ capacity, used: item.size, items: [item] });
+                    bins.push({
+                        capacity,
+                        capacityInt,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
                 }
             }
             return { bins };
@@ -536,19 +732,26 @@
                 let bestIndex = -1;
                 let bestRemaining = Infinity;
                 bins.forEach((bin, index) => {
-                    const remaining = bin.capacity - bin.used;
-                    if (item.size <= remaining && remaining - item.size < bestRemaining) {
-                        bestRemaining = remaining - item.size;
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    if (item.sizeInt <= remaining && remaining - item.sizeInt < bestRemaining) {
+                        bestRemaining = remaining - item.sizeInt;
                         bestIndex = index;
                     }
                 });
 
                 if (bestIndex >= 0) {
                     bins[bestIndex].used += item.size;
+                    bins[bestIndex].usedInt += item.sizeInt;
                     bins[bestIndex].items.push(item);
                 } else {
-                    const capacity = item.size > SMALL_BOTTLE ? LARGE_BOTTLE : (preferSmall ? SMALL_BOTTLE : LARGE_BOTTLE);
-                    bins.push({ capacity, used: item.size, items: [item] });
+                    const capacity = item.sizeInt > SMALL_CAPACITY_INT ? LARGE_BOTTLE : (preferSmall ? SMALL_BOTTLE : LARGE_BOTTLE);
+                    bins.push({
+                        capacity,
+                        capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
                 }
             });
             return { bins };
@@ -561,11 +764,17 @@
                     result.push(cloneBin(bin));
                     return;
                 }
-                if (bin.used <= SMALL_BOTTLE) {
-                    result.push({ capacity: SMALL_BOTTLE, used: bin.used, items: bin.items.slice() });
+                if (bin.usedInt <= SMALL_CAPACITY_INT) {
+                    result.push({
+                        capacity: SMALL_BOTTLE,
+                        capacityInt: SMALL_CAPACITY_INT,
+                        used: bin.used,
+                        usedInt: bin.usedInt,
+                        items: bin.items.slice()
+                    });
                     return;
                 }
-                if (bin.used <= SMALL_BOTTLE * 2) {
+                if (bin.usedInt <= SMALL_CAPACITY_INT * 2) {
                     const split = splitItemsIntoTwo50(bin.items);
                     if (split) {
                         result.push(split.binA, split.binB);
@@ -578,21 +787,19 @@
         }
 
         function splitItemsIntoTwo50(items) {
-            const limitInt = Math.round(SMALL_BOTTLE * SCALE);
-            const sizesInt = items.map((item) => Math.round(item.size * SCALE));
-            const totalInt = sizesInt.reduce((sum, size) => sum + size, 0);
-            if (totalInt > limitInt * 2) return null;
-            if (sizesInt.some((size) => size > limitInt)) return null;
+            const totalInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            if (totalInt > SMALL_CAPACITY_INT * 2) return null;
+            if (items.some((item) => item.sizeInt > SMALL_CAPACITY_INT)) return null;
 
-            const minTarget = Math.max(totalInt - limitInt, 0);
-            const maxTarget = Math.min(limitInt, totalInt);
-            const dp = Array(limitInt + 1).fill(-1);
-            const prev = Array(limitInt + 1).fill(-1);
+            const minTarget = Math.max(totalInt - SMALL_CAPACITY_INT, 0);
+            const maxTarget = Math.min(SMALL_CAPACITY_INT, totalInt);
+            const dp = Array(SMALL_CAPACITY_INT + 1).fill(-1);
+            const prev = Array(SMALL_CAPACITY_INT + 1).fill(-1);
             dp[0] = -2;
 
-            for (let i = 0; i < sizesInt.length; i++) {
-                const size = sizesInt[i];
-                for (let sum = limitInt; sum >= size; sum--) {
+            for (let i = 0; i < items.length; i++) {
+                const size = items[i].sizeInt;
+                for (let sum = SMALL_CAPACITY_INT; sum >= size; sum--) {
                     if (dp[sum] === -1 && dp[sum - size] !== -1) {
                         dp[sum] = i;
                         prev[sum] = sum - size;
@@ -620,86 +827,133 @@
 
             const binAItems = [];
             const binBItems = [];
+            let usedAInt = 0;
+            let usedBInt = 0;
             let usedA = 0;
             let usedB = 0;
             items.forEach((item, index) => {
                 if (usedFlags[index]) {
                     binAItems.push(item);
+                    usedAInt += item.sizeInt;
                     usedA += item.size;
                 } else {
                     binBItems.push(item);
+                    usedBInt += item.sizeInt;
                     usedB += item.size;
                 }
             });
 
-            if (usedB === 0) {
+            if (usedBInt === 0) {
                 return null;
             }
 
             return {
-                binA: { capacity: SMALL_BOTTLE, used: usedA, items: binAItems },
-                binB: { capacity: SMALL_BOTTLE, used: usedB, items: binBItems }
+                binA: {
+                    capacity: SMALL_BOTTLE,
+                    capacityInt: SMALL_CAPACITY_INT,
+                    used: usedA,
+                    usedInt: usedAInt,
+                    items: binAItems
+                },
+                binB: {
+                    capacity: SMALL_BOTTLE,
+                    capacityInt: SMALL_CAPACITY_INT,
+                    used: usedB,
+                    usedInt: usedBInt,
+                    items: binBItems
+                }
             };
         }
 
         function exactPack(items) {
             let bestBins = null;
-            let bestCapacity = Infinity;
+            let bestCapacityInt = Infinity;
             let bestCount = Infinity;
-            const totalVolume = items.reduce((sum, item) => sum + item.size, 0);
+            const totalVolumeInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            const remainingVolumes = new Array(items.length);
+            let running = 0;
+            for (let i = items.length - 1; i >= 0; i--) {
+                running += items[i].sizeInt;
+                remainingVolumes[i] = running;
+            }
 
             const heuristic = bestFitPack(items, LARGE_BOTTLE);
             if (heuristic) {
                 const improved = splitBinsTo50(heuristic.bins);
                 const initialScore = scorePacking(improved);
-                bestCapacity = initialScore.totalCapacity;
+                bestCapacityInt = initialScore.totalCapacityInt;
                 bestCount = initialScore.count;
                 bestBins = cloneBins(improved);
             }
 
-            function dfs(index, bins, usedVolume, capacitySum) {
-                const remainingVolume = totalVolume - usedVolume;
-                if (capacitySum >= bestCapacity) {
+            function dfs(index, bins, usedVolumeInt, capacitySumInt) {
+                const remainingVolumeInt = totalVolumeInt - usedVolumeInt;
+                if (capacitySumInt >= bestCapacityInt) {
                     return;
                 }
-                if (capacitySum + remainingVolume > bestCapacity) {
+                const minAdditional = minCapacityLowerBoundInt(remainingVolumeInt);
+                if (capacitySumInt + minAdditional > bestCapacityInt) {
                     return;
                 }
                 if (index === items.length) {
-                    if (capacitySum < bestCapacity || (capacitySum === bestCapacity && bins.length < bestCount)) {
-                        bestCapacity = capacitySum;
+                    if (capacitySumInt < bestCapacityInt || (capacitySumInt === bestCapacityInt && bins.length < bestCount)) {
+                        bestCapacityInt = capacitySumInt;
                         bestCount = bins.length;
                         bestBins = cloneBins(bins);
                     }
                     return;
                 }
 
+                if (bins.length > 0) {
+                    let remainingCapacityInt = 0;
+                    bins.forEach((bin) => {
+                        remainingCapacityInt += bin.capacityInt - bin.usedInt;
+                    });
+                    if (remainingCapacityInt < remainingVolumes[index]) {
+                        return;
+                    }
+                }
+
                 const item = items[index];
                 const seen = new Set();
                 for (let i = 0; i < bins.length; i++) {
                     const bin = bins[i];
-                    if (bin.used + item.size > bin.capacity) continue;
-                    const key = `${bin.used}|${bin.capacity}`;
+                    if (bin.usedInt + item.sizeInt > bin.capacityInt) continue;
+                    const key = `${bin.usedInt}|${bin.capacityInt}`;
                     if (seen.has(key)) continue;
                     seen.add(key);
 
                     bin.used += item.size;
+                    bin.usedInt += item.sizeInt;
                     bin.items.push(item);
-                    dfs(index + 1, bins, usedVolume + item.size, capacitySum);
+                    dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt);
                     bin.items.pop();
                     bin.used -= item.size;
+                    bin.usedInt -= item.sizeInt;
                 }
 
-                if (item.size <= SMALL_BOTTLE) {
+                if (item.sizeInt <= SMALL_CAPACITY_INT) {
                     const capacities = [SMALL_BOTTLE, LARGE_BOTTLE];
                     for (const capacity of capacities) {
-                        bins.push({ capacity, used: item.size, items: [item] });
-                        dfs(index + 1, bins, usedVolume + item.size, capacitySum + capacity);
+                        bins.push({
+                            capacity,
+                            capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                            used: item.size,
+                            usedInt: item.sizeInt,
+                            items: [item]
+                        });
+                        dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt + (capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT));
                         bins.pop();
                     }
                 } else {
-                    bins.push({ capacity: LARGE_BOTTLE, used: item.size, items: [item] });
-                    dfs(index + 1, bins, usedVolume + item.size, capacitySum + LARGE_BOTTLE);
+                    bins.push({
+                        capacity: LARGE_BOTTLE,
+                        capacityInt: LARGE_CAPACITY_INT,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
+                    dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt + LARGE_CAPACITY_INT);
                     bins.pop();
                 }
             }
@@ -709,15 +963,18 @@
         }
 
         function scorePacking(bins) {
-            let totalCapacity = 0;
-            let totalUsed = 0;
+            let totalCapacityInt = 0;
+            let totalUsedInt = 0;
             bins.forEach((bin) => {
-                totalCapacity += bin.capacity;
-                totalUsed += bin.used;
+                totalCapacityInt += bin.capacityInt;
+                totalUsedInt += bin.usedInt;
             });
+            const wasteInt = Math.max(0, totalCapacityInt - totalUsedInt);
             return {
-                totalCapacity,
-                waste: Math.max(0, totalCapacity - totalUsed),
+                totalCapacity: totalCapacityInt / SCALE,
+                totalCapacityInt,
+                waste: wasteInt / SCALE,
+                wasteInt,
                 count: bins.length
             };
         }
@@ -725,7 +982,9 @@
         function cloneBin(bin) {
             return {
                 capacity: bin.capacity,
+                capacityInt: bin.capacityInt,
                 used: bin.used,
+                usedInt: bin.usedInt,
                 items: bin.items.slice()
             };
         }
