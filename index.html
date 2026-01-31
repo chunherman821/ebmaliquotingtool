@@ -5,163 +5,1173 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDBM Aliquoting Tool - NICU</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #f8f9fa; }
-        h1, h2 { color: #2c3e50; }
-        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f8f9fa;
+            color: #212529;
+        }
+        h1, h2, h3 { color: #2c3e50; }
+        .container {
+            max-width: 1100px;
+            margin: auto;
+            background: #ffffff;
+            padding: 24px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.08);
+        }
+        .table-wrapper { overflow-x: auto; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 16px;
+        }
+        th, td {
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            text-align: center;
+            vertical-align: top;
+        }
         th { background: #e9ecef; }
-        input { width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
-        button { padding: 8px 12px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        input {
+            width: 80px;
+            padding: 6px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        input[type="text"] { width: 130px; }
+        button {
+            padding: 8px 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
         button:hover { background: #0056b3; }
+        .secondary-btn { background: #6c757d; }
+        .secondary-btn:hover { background: #5a6268; }
         .remove-btn { background: #dc3545; }
         .remove-btn:hover { background: #c82333; }
-        .summary { background: #d4edda; padding: 15px; border-radius: 8px; margin-top: 20px; }
-        .warning { background: #fff3cd; padding: 15px; border-radius: 8px; margin-top: 20px; color: #856404; }
-        .print-btn { background: #28a745; margin-top: 20px; padding: 10px 20px; font-size: 16px; }
-        @media print { body { margin: 0; } .no-print { display: none; } }
+        .print-btn { background: #28a745; margin-left: 10px; }
+        .print-btn:hover { background: #218838; }
+        .controls { margin-bottom: 18px; }
+        .summary, .warning, .info, .reminders {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        .summary { background: #e6f4ea; }
+        .warning { background: #fff3cd; color: #856404; }
+        .info { background: #e9f2ff; color: #0c5460; }
+        .reminders { background: #f1f3f5; }
+        .hidden { display: none; }
+        .inline-field {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .unit {
+            font-size: 12px;
+            color: #6c757d;
+        }
+        .subtext {
+            font-size: 12px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
+        .row-note {
+            font-size: 12px;
+            color: #6c757d;
+            text-align: left;
+        }
+        .allocation {
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+        }
+        .allocation-list { margin-top: 10px; }
+        .bottle-card {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            background: #fdfdfe;
+        }
+        .bottle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .bottle-items {
+            margin: 8px 0 0 18px;
+            text-align: left;
+        }
+        .bottle-items li { margin-bottom: 4px; }
+        .allocation-empty {
+            color: #6c757d;
+            margin: 0;
+        }
+        @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>PDBM Aliquoting Tool</h1>
-        <p><strong>Pasteurised Donor Breast Milk (PDBM) Calculator for NICU</strong></p>
+        <p><strong>Pasteurised Donor Breast Milk (PDBM) calculator for NICU</strong></p>
         <p>Date: <span id="current-date"></span></p>
 
-        <h2>Baby Feeding Details</h2>
-        <table id="babies-table">
-            <thead>
-                <tr>
-                    <th>Baby ID / Name</th>
-                    <th>Feeding Regime (ml)</th>
-                    <th>EBM Available (ml)</th>
-                    <th>PDBM Needed (ml)</th>
-                    <th class="no-print">Action</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr>
-                    <td><input type="text" class="baby-id" placeholder="e.g. Baby A"></td>
-                    <td><input type="number" class="feeding" min="0" value="0"></td>
-                    <td><input type="number" class="ebm" min="0" value="0"></td>
-                    <td class="pdbm">0</td>
-                    <td class="no-print"><button class="remove-btn">Remove</button></td>
-                </tr>
-            </tbody>
-        </table>
+        <h2>Baby feeding details</h2>
+        <div class="table-wrapper">
+            <table id="babies-table">
+                <thead>
+                    <tr>
+                        <th>Bed ID</th>
+                        <th>Feeding regime (ml x feeds)</th>
+                        <th>EBM available (ml x bottles)</th>
+                        <th>Total EBM (ml)</th>
+                        <th>PDBM required (ml)</th>
+                        <th>PDBM bottles used (shared 50 / 125)</th>
+                        <th>Notes</th>
+                        <th class="no-print">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><input type="text" class="bed-id" placeholder="e.g. 123"></td>
+                        <td>
+                            <div class="inline-field">
+                                <input type="number" class="feed-volume" min="0" step="1" placeholder="30">
+                                <span class="unit">ml</span>
+                                <span class="unit">x</span>
+                                <input type="number" class="feed-count" min="0" step="1" placeholder="8">
+                                <span class="unit">feeds</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="inline-field">
+                                <input type="number" class="ebm-volume" min="0" step="1" placeholder="20">
+                                <span class="unit">ml</span>
+                                <span class="unit">x</span>
+                                <input type="number" class="ebm-count" min="0" step="1" placeholder="8">
+                                <span class="unit">bottles</span>
+                            </div>
+                        </td>
+                        <td>
+                            <div><span class="total-ebm">0</span> ml</div>
+                            <div class="subtext ebm-used">0 bottle(s) used</div>
+                        </td>
+                        <td>
+                            <div><span class="pdbm-total">0</span> ml</div>
+                            <div class="subtext pdbm-feed-count">0 feed(s) need PDBM</div>
+                        </td>
+                        <td>
+                            <div><span class="pdbm-bottles">0 / 0</span></div>
+                            <div class="subtext">50 ml / 125 ml</div>
+                        </td>
+                        <td class="row-note"></td>
+                        <td class="no-print"><button class="remove-btn">Remove</button></td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="4"><strong>Total PDBM required for all babies</strong></td>
+                        <td><strong><span id="total-pdbm-table">0</span> ml</strong></td>
+                        <td colspan="3"></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+        <p class="subtext">
+            Per-baby bottle counts show shared bottles that include at least one feed for that baby.
+            These counts are not additive and will not match the overall total.
+        </p>
 
-        <button id="add-baby" class="no-print">Add Baby</button>
-        <button id="print-btn" class="print-btn no-print">Print / Save as PDF</button>
-
-        <div class="summary">
-            <h2>Summary</h2>
-            <p><strong>Total PDBM Required:</strong> <span id="total-pdbm">0</span> ml</p>
-            <p><strong>Recommended Bottles:</strong></p>
-            <ul>
-                <li>50 ml bottles: <span id="bottles-50">0</span></li>
-                <li>130 ml bottles: <span id="bottles-130">0</span></li>
-            </ul>
-            <p><strong>Total volume from bottles:</strong> <span id="total-volume">0</span> ml</p>
-            <p><strong>Estimated waste:</strong> <span id="waste">0</span> ml <span id="waste-note"></span></p>
+        <div class="controls no-print">
+            <button id="add-baby">Add baby</button>
+            <button id="clear-all" class="secondary-btn">Clear inputs</button>
+            <button id="print-btn" class="print-btn">Print / Save as PDF</button>
         </div>
 
-        <div class="warning">
-            <strong>Important Reminders:</strong><br>
-            • Do <strong>NOT mix milk from different bottles</strong> (risk of contamination).<br>
-            • Always aim to <strong>minimise waste</strong> – disciplinary action may follow excessive waste.<br>
-            • One bottle can be divided among multiple babies, but never combine contents of two bottles.
+        <div class="summary">
+            <h2>Overall summary</h2>
+            <p><strong>Total PDBM required:</strong> <span id="total-pdbm">0</span> ml</p>
+            <p><strong>Total EBM available:</strong> <span id="total-ebm">0</span> ml</p>
+            <p><strong>Recommended PDBM bottles (overall, minimum waste first):</strong></p>
+            <ul>
+                <li>50 ml bottles: <span id="bottles-50">0</span></li>
+                <li>125 ml bottles: <span id="bottles-125">0</span></li>
+            </ul>
+            <p><strong>Total bottle volume:</strong> <span id="total-volume">0</span> ml</p>
+            <p><strong>Estimated PDBM waste:</strong> <span id="waste">0</span> ml <span id="waste-note"></span></p>
+            <p class="subtext">Allocation method: <span id="allocation-method">-</span></p>
+        </div>
+
+        <div id="allocation-warning" class="warning hidden"></div>
+
+        <div class="allocation">
+            <h2>Bottle-by-bottle allocation</h2>
+            <p class="subtext">Each feed listed uses PDBM from one bottle only.</p>
+            <div id="allocation-list" class="allocation-list"></div>
+        </div>
+
+        <div class="info">
+            <h3>Assumptions used in this calculator</h3>
+            <ul>
+                <li>EBM bottles are single-use: one bottle can cover one feed only. Any leftover EBM is wasted.</li>
+                <li>PDBM from one bottle can be split across multiple feeds/babies, but a feed cannot combine PDBM from two bottles.</li>
+                <li>The algorithm aims to minimise waste first, then minimise bottle count. For small numbers of PDBM feeds it uses an exact search; for larger numbers it uses a heuristic with splitting into 50 ml bottles when possible.</li>
+            </ul>
+        </div>
+
+        <div class="reminders">
+            <h3>Important reminders</h3>
+            <ul>
+                <li>Do not mix milk from different PDBM bottles in the same feed.</li>
+                <li>Always aim to minimise PDBM waste.</li>
+                <li>If any feed needs more than 125 ml of PDBM, the allocation will require clinical adjustment.</li>
+            </ul>
         </div>
     </div>
 
     <script>
-        // Set current date
+        const SMALL_BOTTLE = 50;
+        const LARGE_BOTTLE = 125;
+        const EXACT_LIMIT = 18;
+        const SCALE = 10;
+        const SMALL_CAPACITY_INT = SMALL_BOTTLE * SCALE;
+        const LARGE_CAPACITY_INT = LARGE_BOTTLE * SCALE;
+        const CAPACITY_STEP_INT = 25 * SCALE;
+
         document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-GB');
 
         const tableBody = document.querySelector('#babies-table tbody');
+        const warningEl = document.getElementById('allocation-warning');
+        const allocationMethodEl = document.getElementById('allocation-method');
+        const allocationListEl = document.getElementById('allocation-list');
 
-        function updateCalculations() {
-            let totalPDBM = 0;
-
-            document.querySelectorAll('#babies-table tr').forEach(row => {
-                const feeding = parseFloat(row.querySelector('.feeding').value) || 0;
-                const ebm = parseFloat(row.querySelector('.ebm').value) || 0;
-                const pdbmNeeded = Math.max(0, feeding - ebm);
-                row.querySelector('.pdbm').textContent = pdbmNeeded;
-                totalPDBM += pdbmNeeded;
-            });
-
-            document.getElementById('total-pdbm').textContent = totalPDBM;
-
-            const { bottles50, bottles130, waste } = findOptimalBottles(totalPDBM);
-
-            document.getElementById('bottles-50').textContent = bottles50;
-            document.getElementById('bottles-130').textContent = bottles130;
-            document.getElementById('total-volume').textContent = bottles50 * 50 + bottles130 * 130;
-            document.getElementById('waste').textContent = waste;
-
-            const wasteNote = waste === 0 ? '(Perfect – no waste!)' : waste < 50 ? '(Acceptable)' : '(Consider adjusting if possible)';
-            document.getElementById('waste-note').textContent = wasteNote;
+        function toNumber(value) {
+            const parsed = parseFloat(value);
+            if (!Number.isFinite(parsed) || parsed < 0) return 0;
+            return parsed;
         }
 
-        function findOptimalBottles(total) {
-            if (total === 0) return { bottles50: 0, bottles130: 0, waste: 0 };
+        function toInt(value) {
+            const parsed = parseInt(value, 10);
+            if (!Number.isFinite(parsed) || parsed < 0) return 0;
+            return parsed;
+        }
 
-            let best = { bottles50: 0, bottles130: Math.ceil(total / 130), waste: Math.ceil(total / 130) * 130 - total };
-            let minWaste = best.waste;
+        function formatMl(value) {
+            const rounded = Math.round(value * 10) / 10;
+            return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+        }
 
-            // Try different numbers of 130ml bottles
-            const max130 = Math.ceil(total / 130) + 2;
-            for (let y = 0; y <= max130; y++) {
-                const remaining = total - y * 130;
-                if (remaining <= 0) {
-                    const waste = -remaining;
-                    if (waste < minWaste || (waste === minWaste && y < best.bottles130)) {
-                        minWaste = waste;
-                        best = { bottles50: 0, bottles130: y, waste };
-                    }
-                    continue;
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function buildBaby(row, index) {
+            const bedIdInput = row.querySelector('.bed-id');
+            const bedId = bedIdInput.value.trim() || `Bed ${index + 1}`;
+            const feedVolume = toNumber(row.querySelector('.feed-volume').value);
+            const feedCount = toInt(row.querySelector('.feed-count').value);
+            const ebmVolume = toNumber(row.querySelector('.ebm-volume').value);
+            const ebmCount = toInt(row.querySelector('.ebm-count').value);
+
+            const hasEbm = ebmVolume > 0 && ebmCount > 0;
+            const usedEbmBottles = hasEbm ? Math.min(feedCount, ebmCount) : 0;
+            const totalEbm = hasEbm ? ebmVolume * ebmCount : 0;
+
+            const items = [];
+            let pdbmTotal = 0;
+            let overLimit = false;
+
+            for (let i = 0; i < feedCount; i++) {
+                let pdbmForFeed = feedVolume;
+                if (i < usedEbmBottles) {
+                    pdbmForFeed = Math.max(0, feedVolume - ebmVolume);
                 }
-                const x = Math.ceil(remaining / 50);
-                const waste = x * 50 + y * 130 - total;
-                const totalBottles = x + y;
-                if (waste < minWaste || (waste === minWaste && totalBottles < best.bottles50 + best.bottles130)) {
-                    minWaste = waste;
-                    best = { bottles50: x, bottles130: y, waste };
+                if (pdbmForFeed > 0) {
+                    const sizeInt = Math.round(pdbmForFeed * SCALE);
+                    items.push({
+                        size: pdbmForFeed,
+                        sizeInt,
+                        babyIndex: index,
+                        bedId,
+                        feedNumber: i + 1,
+                        usedEbm: i < usedEbmBottles
+                    });
+                    pdbmTotal += pdbmForFeed;
+                    if (pdbmForFeed > LARGE_BOTTLE) {
+                        overLimit = true;
+                    }
+                }
+            }
+
+            const notes = [];
+            if (feedCount === 0 || feedVolume === 0) {
+                notes.push('No feeds entered');
+            } else if (pdbmTotal === 0) {
+                notes.push('EBM covers all feeds');
+            }
+            if (hasEbm && ebmVolume > feedVolume && usedEbmBottles > 0) {
+                notes.push('EBM bottle larger than feed; extra EBM wasted');
+            }
+            if (hasEbm && ebmCount > feedCount) {
+                notes.push('Extra EBM bottles unused');
+            }
+            if (overLimit) {
+                notes.push('PDBM per feed > 125 ml');
+            }
+
+            return {
+                row,
+                bedId,
+                feedVolume,
+                feedCount,
+                ebmVolume,
+                ebmCount,
+                usedEbmBottles,
+                totalEbm,
+                pdbmTotal,
+                items,
+                notes
+            };
+        }
+
+        function updateRowBasics(baby) {
+            baby.row.querySelector('.total-ebm').textContent = formatMl(baby.totalEbm);
+            const ebmUsedText = baby.usedEbmBottles > 0
+                ? `${baby.usedEbmBottles} of ${baby.ebmCount} bottle(s) used`
+                : '0 bottle(s) used';
+            baby.row.querySelector('.ebm-used').textContent = ebmUsedText;
+
+            baby.row.querySelector('.pdbm-total').textContent = formatMl(baby.pdbmTotal);
+            baby.row.querySelector('.pdbm-feed-count').textContent = `${baby.items.length} feed(s) need PDBM`;
+            baby.row.querySelector('.row-note').textContent = baby.notes.join('; ');
+        }
+
+        function updateCalculations() {
+            const rows = Array.from(tableBody.querySelectorAll('tr'));
+            const babies = rows.map((row, index) => buildBaby(row, index));
+
+            let totalPdbm = 0;
+            let totalEbm = 0;
+            const allocationItems = [];
+            const overLimitItems = [];
+
+            babies.forEach((baby) => {
+                totalPdbm += baby.pdbmTotal;
+                totalEbm += baby.totalEbm;
+                baby.items.forEach((item) => {
+                    if (item.size > LARGE_BOTTLE) {
+                        overLimitItems.push({ bedId: baby.bedId, size: item.size });
+                    } else {
+                        allocationItems.push(item);
+                    }
+                });
+            });
+
+            babies.forEach(updateRowBasics);
+
+            document.getElementById('total-pdbm').textContent = formatMl(totalPdbm);
+            document.getElementById('total-pdbm-table').textContent = formatMl(totalPdbm);
+            document.getElementById('total-ebm').textContent = formatMl(totalEbm);
+
+            if (totalPdbm === 0) {
+                document.getElementById('bottles-50').textContent = '0';
+                document.getElementById('bottles-125').textContent = '0';
+                document.getElementById('total-volume').textContent = '0';
+                document.getElementById('waste').textContent = '0';
+                document.getElementById('waste-note').textContent = '(No PDBM required)';
+                allocationMethodEl.textContent = 'No PDBM required';
+                warningEl.classList.add('hidden');
+                warningEl.innerHTML = '';
+                setAllocationMessage('No PDBM required.');
+                rows.forEach((row) => {
+                    row.querySelector('.pdbm-bottles').textContent = '0 / 0';
+                });
+                return;
+            }
+
+            if (overLimitItems.length > 0) {
+                warningEl.classList.remove('hidden');
+                const itemsHtml = overLimitItems
+                    .map((item) => `<li>${escapeHtml(item.bedId)}: ${formatMl(item.size)} ml PDBM per feed</li>`)
+                    .join('');
+                warningEl.innerHTML = `
+                    <strong>Allocation warning:</strong> Some feeds require more than 125 ml of PDBM in a single feed,
+                    which cannot be prepared without mixing bottles. Please adjust feeds or add EBM.
+                    <ul>${itemsHtml}</ul>
+                `;
+                document.getElementById('bottles-50').textContent = 'N/A';
+                document.getElementById('bottles-125').textContent = 'N/A';
+                document.getElementById('total-volume').textContent = 'N/A';
+                document.getElementById('waste').textContent = 'N/A';
+                document.getElementById('waste-note').textContent = '';
+                allocationMethodEl.textContent = 'Not possible';
+                setAllocationMessage('Allocation not possible. Please adjust feeds or add EBM.');
+                rows.forEach((row) => {
+                    row.querySelector('.pdbm-bottles').textContent = 'N/A';
+                });
+                return;
+            }
+
+            warningEl.classList.add('hidden');
+            warningEl.innerHTML = '';
+
+            const allocation = packItems(allocationItems);
+            const bins = allocation.bins;
+            const packingScore = scorePacking(bins);
+            const bottles50 = bins.filter((bin) => bin.capacity === SMALL_BOTTLE).length;
+            const bottles125 = bins.filter((bin) => bin.capacity === LARGE_BOTTLE).length;
+            const totalVolume = packingScore.totalCapacity;
+            const waste = Math.max(0, totalVolume - totalPdbm);
+
+            document.getElementById('bottles-50').textContent = String(bottles50);
+            document.getElementById('bottles-125').textContent = String(bottles125);
+            document.getElementById('total-volume').textContent = formatMl(totalVolume);
+            document.getElementById('waste').textContent = formatMl(waste);
+            const wasteNote = waste === 0 ? '(No waste)' : waste <= SMALL_BOTTLE ? '(Low waste)' : '(Review if adjustments are possible)';
+            document.getElementById('waste-note').textContent = wasteNote;
+            allocationMethodEl.textContent = allocation.method;
+            renderAllocationList(bins);
+
+            const perBabyCounts = babies.map(() => ({ b50: 0, b125: 0 }));
+            bins.forEach((bin) => {
+                const babySet = new Set(bin.items.map((item) => item.babyIndex));
+                babySet.forEach((babyIndex) => {
+                    if (bin.capacity === SMALL_BOTTLE) {
+                        perBabyCounts[babyIndex].b50 += 1;
+                    } else {
+                        perBabyCounts[babyIndex].b125 += 1;
+                    }
+                });
+            });
+
+            rows.forEach((row, index) => {
+                const counts = perBabyCounts[index];
+                row.querySelector('.pdbm-bottles').textContent = `${counts.b50} / ${counts.b125}`;
+            });
+        }
+
+        function setAllocationMessage(message) {
+            allocationListEl.innerHTML = '';
+            const para = document.createElement('p');
+            para.className = 'allocation-empty';
+            para.textContent = message;
+            allocationListEl.appendChild(para);
+        }
+
+        function renderAllocationList(bins) {
+            allocationListEl.innerHTML = '';
+            if (!bins || bins.length === 0) {
+                setAllocationMessage('No PDBM required.');
+                return;
+            }
+
+            const sortedBins = [...bins].sort((a, b) => {
+                if (b.capacity !== a.capacity) return b.capacity - a.capacity;
+                return b.used - a.used;
+            });
+
+            sortedBins.forEach((bin, index) => {
+                const card = document.createElement('div');
+                card.className = 'bottle-card';
+
+                const header = document.createElement('div');
+                header.className = 'bottle-header';
+
+                const title = document.createElement('strong');
+                title.textContent = `Bottle ${index + 1} (${bin.capacity} ml)`;
+
+                const summary = document.createElement('span');
+                const waste = bin.capacity - bin.used;
+                summary.textContent = `${formatMl(bin.used)} ml used, ${formatMl(waste)} ml waste`;
+
+                header.appendChild(title);
+                header.appendChild(summary);
+                card.appendChild(header);
+
+                const list = document.createElement('ul');
+                list.className = 'bottle-items';
+
+                const sortedItems = [...bin.items].sort((a, b) => {
+                    if (a.babyIndex !== b.babyIndex) return a.babyIndex - b.babyIndex;
+                    return a.feedNumber - b.feedNumber;
+                });
+
+                sortedItems.forEach((item) => {
+                    const li = document.createElement('li');
+                    const ebmNote = item.usedEbm ? ' (with EBM)' : '';
+                    li.textContent = `Bed ID ${item.bedId} - Feed ${item.feedNumber}: ${formatMl(item.size)} ml PDBM${ebmNote}`;
+                    list.appendChild(li);
+                });
+
+                if (sortedItems.length === 0) {
+                    const empty = document.createElement('li');
+                    empty.textContent = 'No feeds assigned.';
+                    list.appendChild(empty);
+                }
+
+                card.appendChild(list);
+                allocationListEl.appendChild(card);
+            });
+        }
+
+        function packItems(items) {
+            const sorted = [...items].sort((a, b) => b.sizeInt - a.sizeInt);
+            if (sorted.length === 0) {
+                return { bins: [], method: 'No PDBM required' };
+            }
+
+            if (sorted.length <= EXACT_LIMIT) {
+                const exact = exactPack(sorted);
+                if (exact) {
+                    return { bins: exact.bins, method: 'Exact search (min waste)' };
+                }
+            }
+
+            const heuristic = heuristicPack(sorted);
+            const search = capacitySearchPack(sorted, heuristic, 120);
+            return search || heuristic;
+        }
+
+        function heuristicPack(sorted) {
+            const candidates = [];
+            const bestFit125 = bestFitPack(sorted, LARGE_BOTTLE);
+            if (bestFit125) {
+                candidates.push({ bins: splitBinsTo50(bestFit125.bins), method: 'Best-fit 125 + split' });
+            }
+            const firstFit125 = firstFitPack(sorted, LARGE_BOTTLE);
+            if (firstFit125) {
+                candidates.push({ bins: splitBinsTo50(firstFit125.bins), method: 'First-fit 125 + split' });
+            }
+
+            const allSmallOk = sorted.every((item) => item.sizeInt <= SMALL_CAPACITY_INT);
+            if (allSmallOk) {
+                const bestFit50 = bestFitPack(sorted, SMALL_BOTTLE);
+                if (bestFit50) {
+                    candidates.push({ bins: bestFit50.bins, method: 'Best-fit 50' });
+                }
+                const firstFit50 = firstFitPack(sorted, SMALL_BOTTLE);
+                if (firstFit50) {
+                    candidates.push({ bins: firstFit50.bins, method: 'First-fit 50' });
+                }
+                const preferSmall = variableBestFitPack(sorted, true);
+                candidates.push({ bins: splitBinsTo50(preferSmall.bins), method: 'Hybrid (prefer 50)' });
+                const preferLarge = variableBestFitPack(sorted, false);
+                candidates.push({ bins: splitBinsTo50(preferLarge.bins), method: 'Hybrid (prefer 125)' });
+            } else {
+                const hybrid = variableBestFitPack(sorted, true);
+                candidates.push({ bins: splitBinsTo50(hybrid.bins), method: 'Hybrid (prefer 50)' });
+            }
+
+            let best = candidates[0];
+            let bestScore = scorePacking(best.bins);
+            for (let i = 1; i < candidates.length; i++) {
+                const score = scorePacking(candidates[i].bins);
+                if (isBetterScore(score, bestScore)) {
+                    best = candidates[i];
+                    bestScore = score;
                 }
             }
             return best;
         }
 
-        // Event listeners
+        function capacitySearchPack(items, fallback, maxSearchMs) {
+            if (!fallback || !fallback.bins || fallback.bins.length === 0) {
+                return null;
+            }
+            const totalVolumeInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            const lowerCapacityInt = minCapacityLowerBoundInt(totalVolumeInt);
+            const fallbackScore = scorePacking(fallback.bins);
+            const upperCapacityInt = fallbackScore.totalCapacityInt;
+            if (!Number.isFinite(upperCapacityInt)) {
+                return null;
+            }
+
+            const deadline = performance.now() + maxSearchMs;
+
+            for (let capacityInt = lowerCapacityInt; capacityInt <= upperCapacityInt; capacityInt += CAPACITY_STEP_INT) {
+                const combos = combosForCapacityInt(capacityInt);
+                for (const combo of combos) {
+                    if (performance.now() > deadline) {
+                        return null;
+                    }
+                    const packed = packFixedBins(items, combo.count50, combo.count125, deadline);
+                    if (packed === null) {
+                        return null;
+                    }
+                    if (packed) {
+                        return { bins: packed.bins, method: 'Capacity search (min waste)' };
+                    }
+                }
+            }
+            return null;
+        }
+
+        function minCapacityLowerBoundInt(totalVolumeInt) {
+            let minCapacityInt = Infinity;
+            const maxLarge = Math.ceil(totalVolumeInt / LARGE_CAPACITY_INT);
+            for (let count125 = 0; count125 <= maxLarge; count125++) {
+                const capacityInt = count125 * LARGE_CAPACITY_INT;
+                const remainingInt = Math.max(0, totalVolumeInt - capacityInt);
+                const count50 = Math.ceil(remainingInt / SMALL_CAPACITY_INT);
+                const candidate = capacityInt + count50 * SMALL_CAPACITY_INT;
+                if (candidate < minCapacityInt) {
+                    minCapacityInt = candidate;
+                }
+            }
+            return minCapacityInt;
+        }
+
+        function combosForCapacityInt(capacityInt) {
+            const combos = [];
+            const maxLarge = Math.floor(capacityInt / LARGE_CAPACITY_INT);
+            for (let count125 = 0; count125 <= maxLarge; count125++) {
+                const remainingInt = capacityInt - count125 * LARGE_CAPACITY_INT;
+                if (remainingInt < 0) continue;
+                if (remainingInt % SMALL_CAPACITY_INT !== 0) continue;
+                const count50 = remainingInt / SMALL_CAPACITY_INT;
+                combos.push({ count50, count125, count: count50 + count125 });
+            }
+            combos.sort((a, b) => a.count - b.count || b.count125 - a.count125);
+            return combos;
+        }
+
+        function packFixedBins(items, count50, count125, deadline) {
+            const bins = [];
+            for (let i = 0; i < count125; i++) {
+                bins.push(createBin(LARGE_BOTTLE));
+            }
+            for (let i = 0; i < count50; i++) {
+                bins.push(createBin(SMALL_BOTTLE));
+            }
+
+            const sorted = [...items].sort((a, b) => b.sizeInt - a.sizeInt);
+            const remainingVolumes = new Array(sorted.length);
+            let running = 0;
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                running += sorted[i].sizeInt;
+                remainingVolumes[i] = running;
+            }
+
+            const memo = new Map();
+
+            function dfs(index) {
+                if (performance.now() > deadline) {
+                    return null;
+                }
+                if (index === sorted.length) {
+                    return true;
+                }
+
+                let remainingCapacityInt = 0;
+                const remainingCaps = [];
+                for (const bin of bins) {
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    remainingCapacityInt += remaining;
+                    remainingCaps.push(remaining);
+                }
+                if (remainingCapacityInt < remainingVolumes[index]) {
+                    return false;
+                }
+
+                remainingCaps.sort((a, b) => b - a);
+                const key = `${index}|${remainingCaps.join(',')}`;
+                if (memo.has(key)) {
+                    return false;
+                }
+
+                const item = sorted[index];
+                const binOptions = [];
+                for (let i = 0; i < bins.length; i++) {
+                    const remaining = bins[i].capacityInt - bins[i].usedInt;
+                    if (remaining >= item.sizeInt) {
+                        binOptions.push({ index: i, remaining });
+                    }
+                }
+                if (binOptions.length === 0) {
+                    memo.set(key, false);
+                    return false;
+                }
+
+                binOptions.sort((a, b) => a.remaining - b.remaining);
+                const tried = new Set();
+                for (const option of binOptions) {
+                    if (tried.has(option.remaining)) {
+                        continue;
+                    }
+                    tried.add(option.remaining);
+                    const bin = bins[option.index];
+                    bin.usedInt += item.sizeInt;
+                    bin.used += item.size;
+                    bin.items.push(item);
+
+                    const outcome = dfs(index + 1);
+                    if (outcome === true) {
+                        return true;
+                    }
+                    if (outcome === null) {
+                        bin.items.pop();
+                        bin.used -= item.size;
+                        bin.usedInt -= item.sizeInt;
+                        return null;
+                    }
+
+                    bin.items.pop();
+                    bin.used -= item.size;
+                    bin.usedInt -= item.sizeInt;
+                }
+
+                memo.set(key, false);
+                return false;
+            }
+
+            const result = dfs(0);
+            if (result === true) {
+                return { bins };
+            }
+            if (result === null) {
+                return null;
+            }
+            return false;
+        }
+
+        function createBin(capacity) {
+            return {
+                capacity,
+                capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                used: 0,
+                usedInt: 0,
+                items: []
+            };
+        }
+
+        function isBetterScore(candidate, current) {
+            if (candidate.totalCapacityInt !== current.totalCapacityInt) {
+                return candidate.totalCapacityInt < current.totalCapacityInt;
+            }
+            if (candidate.count !== current.count) {
+                return candidate.count < current.count;
+            }
+            return candidate.wasteInt < current.wasteInt;
+        }
+
+        function bestFitPack(items, capacity) {
+            const bins = [];
+            const capacityInt = capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT;
+            for (const item of items) {
+                if (item.sizeInt > capacityInt) {
+                    return null;
+                }
+                let bestIndex = -1;
+                let bestRemaining = Infinity;
+                bins.forEach((bin, index) => {
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    if (item.sizeInt <= remaining && remaining - item.sizeInt < bestRemaining) {
+                        bestRemaining = remaining - item.sizeInt;
+                        bestIndex = index;
+                    }
+                });
+
+                if (bestIndex >= 0) {
+                    bins[bestIndex].used += item.size;
+                    bins[bestIndex].usedInt += item.sizeInt;
+                    bins[bestIndex].items.push(item);
+                } else {
+                    bins.push({
+                        capacity,
+                        capacityInt,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
+                }
+            }
+            return { bins };
+        }
+
+        function firstFitPack(items, capacity) {
+            const bins = [];
+            const capacityInt = capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT;
+            for (const item of items) {
+                if (item.sizeInt > capacityInt) {
+                    return null;
+                }
+                let placed = false;
+                for (let i = 0; i < bins.length; i++) {
+                    if (bins[i].usedInt + item.sizeInt <= bins[i].capacityInt) {
+                        bins[i].used += item.size;
+                        bins[i].usedInt += item.sizeInt;
+                        bins[i].items.push(item);
+                        placed = true;
+                        break;
+                    }
+                }
+                if (!placed) {
+                    bins.push({
+                        capacity,
+                        capacityInt,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
+                }
+            }
+            return { bins };
+        }
+
+        function variableBestFitPack(items, preferSmall) {
+            const bins = [];
+            items.forEach((item) => {
+                let bestIndex = -1;
+                let bestRemaining = Infinity;
+                bins.forEach((bin, index) => {
+                    const remaining = bin.capacityInt - bin.usedInt;
+                    if (item.sizeInt <= remaining && remaining - item.sizeInt < bestRemaining) {
+                        bestRemaining = remaining - item.sizeInt;
+                        bestIndex = index;
+                    }
+                });
+
+                if (bestIndex >= 0) {
+                    bins[bestIndex].used += item.size;
+                    bins[bestIndex].usedInt += item.sizeInt;
+                    bins[bestIndex].items.push(item);
+                } else {
+                    const capacity = item.sizeInt > SMALL_CAPACITY_INT ? LARGE_BOTTLE : (preferSmall ? SMALL_BOTTLE : LARGE_BOTTLE);
+                    bins.push({
+                        capacity,
+                        capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
+                }
+            });
+            return { bins };
+        }
+
+        function splitBinsTo50(bins) {
+            const result = [];
+            bins.forEach((bin) => {
+                if (bin.capacity === SMALL_BOTTLE) {
+                    result.push(cloneBin(bin));
+                    return;
+                }
+                if (bin.usedInt <= SMALL_CAPACITY_INT) {
+                    result.push({
+                        capacity: SMALL_BOTTLE,
+                        capacityInt: SMALL_CAPACITY_INT,
+                        used: bin.used,
+                        usedInt: bin.usedInt,
+                        items: bin.items.slice()
+                    });
+                    return;
+                }
+                if (bin.usedInt <= SMALL_CAPACITY_INT * 2) {
+                    const split = splitItemsIntoTwo50(bin.items);
+                    if (split) {
+                        result.push(split.binA, split.binB);
+                        return;
+                    }
+                }
+                result.push(cloneBin(bin));
+            });
+            return result;
+        }
+
+        function splitItemsIntoTwo50(items) {
+            const totalInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            if (totalInt > SMALL_CAPACITY_INT * 2) return null;
+            if (items.some((item) => item.sizeInt > SMALL_CAPACITY_INT)) return null;
+
+            const minTarget = Math.max(totalInt - SMALL_CAPACITY_INT, 0);
+            const maxTarget = Math.min(SMALL_CAPACITY_INT, totalInt);
+            const dp = Array(SMALL_CAPACITY_INT + 1).fill(-1);
+            const prev = Array(SMALL_CAPACITY_INT + 1).fill(-1);
+            dp[0] = -2;
+
+            for (let i = 0; i < items.length; i++) {
+                const size = items[i].sizeInt;
+                for (let sum = SMALL_CAPACITY_INT; sum >= size; sum--) {
+                    if (dp[sum] === -1 && dp[sum - size] !== -1) {
+                        dp[sum] = i;
+                        prev[sum] = sum - size;
+                    }
+                }
+            }
+
+            let target = -1;
+            for (let sum = maxTarget; sum >= minTarget; sum--) {
+                if (dp[sum] !== -1) {
+                    target = sum;
+                    break;
+                }
+            }
+            if (target === -1) return null;
+
+            const usedFlags = new Array(items.length).fill(false);
+            let current = target;
+            while (current > 0) {
+                const idx = dp[current];
+                if (idx < 0) break;
+                usedFlags[idx] = true;
+                current = prev[current];
+            }
+
+            const binAItems = [];
+            const binBItems = [];
+            let usedAInt = 0;
+            let usedBInt = 0;
+            let usedA = 0;
+            let usedB = 0;
+            items.forEach((item, index) => {
+                if (usedFlags[index]) {
+                    binAItems.push(item);
+                    usedAInt += item.sizeInt;
+                    usedA += item.size;
+                } else {
+                    binBItems.push(item);
+                    usedBInt += item.sizeInt;
+                    usedB += item.size;
+                }
+            });
+
+            if (usedBInt === 0) {
+                return null;
+            }
+
+            return {
+                binA: {
+                    capacity: SMALL_BOTTLE,
+                    capacityInt: SMALL_CAPACITY_INT,
+                    used: usedA,
+                    usedInt: usedAInt,
+                    items: binAItems
+                },
+                binB: {
+                    capacity: SMALL_BOTTLE,
+                    capacityInt: SMALL_CAPACITY_INT,
+                    used: usedB,
+                    usedInt: usedBInt,
+                    items: binBItems
+                }
+            };
+        }
+
+        function exactPack(items) {
+            let bestBins = null;
+            let bestCapacityInt = Infinity;
+            let bestCount = Infinity;
+            const totalVolumeInt = items.reduce((sum, item) => sum + item.sizeInt, 0);
+            const remainingVolumes = new Array(items.length);
+            let running = 0;
+            for (let i = items.length - 1; i >= 0; i--) {
+                running += items[i].sizeInt;
+                remainingVolumes[i] = running;
+            }
+
+            const heuristic = bestFitPack(items, LARGE_BOTTLE);
+            if (heuristic) {
+                const improved = splitBinsTo50(heuristic.bins);
+                const initialScore = scorePacking(improved);
+                bestCapacityInt = initialScore.totalCapacityInt;
+                bestCount = initialScore.count;
+                bestBins = cloneBins(improved);
+            }
+
+            function dfs(index, bins, usedVolumeInt, capacitySumInt) {
+                const remainingVolumeInt = totalVolumeInt - usedVolumeInt;
+                if (capacitySumInt >= bestCapacityInt) {
+                    return;
+                }
+                const minAdditional = minCapacityLowerBoundInt(remainingVolumeInt);
+                if (capacitySumInt + minAdditional > bestCapacityInt) {
+                    return;
+                }
+                if (index === items.length) {
+                    if (capacitySumInt < bestCapacityInt || (capacitySumInt === bestCapacityInt && bins.length < bestCount)) {
+                        bestCapacityInt = capacitySumInt;
+                        bestCount = bins.length;
+                        bestBins = cloneBins(bins);
+                    }
+                    return;
+                }
+
+                if (bins.length > 0) {
+                    let remainingCapacityInt = 0;
+                    bins.forEach((bin) => {
+                        remainingCapacityInt += bin.capacityInt - bin.usedInt;
+                    });
+                    if (remainingCapacityInt < remainingVolumes[index]) {
+                        return;
+                    }
+                }
+
+                const item = items[index];
+                const seen = new Set();
+                for (let i = 0; i < bins.length; i++) {
+                    const bin = bins[i];
+                    if (bin.usedInt + item.sizeInt > bin.capacityInt) continue;
+                    const key = `${bin.usedInt}|${bin.capacityInt}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+
+                    bin.used += item.size;
+                    bin.usedInt += item.sizeInt;
+                    bin.items.push(item);
+                    dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt);
+                    bin.items.pop();
+                    bin.used -= item.size;
+                    bin.usedInt -= item.sizeInt;
+                }
+
+                if (item.sizeInt <= SMALL_CAPACITY_INT) {
+                    const capacities = [SMALL_BOTTLE, LARGE_BOTTLE];
+                    for (const capacity of capacities) {
+                        bins.push({
+                            capacity,
+                            capacityInt: capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT,
+                            used: item.size,
+                            usedInt: item.sizeInt,
+                            items: [item]
+                        });
+                        dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt + (capacity === SMALL_BOTTLE ? SMALL_CAPACITY_INT : LARGE_CAPACITY_INT));
+                        bins.pop();
+                    }
+                } else {
+                    bins.push({
+                        capacity: LARGE_BOTTLE,
+                        capacityInt: LARGE_CAPACITY_INT,
+                        used: item.size,
+                        usedInt: item.sizeInt,
+                        items: [item]
+                    });
+                    dfs(index + 1, bins, usedVolumeInt + item.sizeInt, capacitySumInt + LARGE_CAPACITY_INT);
+                    bins.pop();
+                }
+            }
+
+            dfs(0, [], 0, 0);
+            return bestBins ? { bins: bestBins } : null;
+        }
+
+        function scorePacking(bins) {
+            let totalCapacityInt = 0;
+            let totalUsedInt = 0;
+            bins.forEach((bin) => {
+                totalCapacityInt += bin.capacityInt;
+                totalUsedInt += bin.usedInt;
+            });
+            const wasteInt = Math.max(0, totalCapacityInt - totalUsedInt);
+            return {
+                totalCapacity: totalCapacityInt / SCALE,
+                totalCapacityInt,
+                waste: wasteInt / SCALE,
+                wasteInt,
+                count: bins.length
+            };
+        }
+
+        function cloneBin(bin) {
+            return {
+                capacity: bin.capacity,
+                capacityInt: bin.capacityInt,
+                used: bin.used,
+                usedInt: bin.usedInt,
+                items: bin.items.slice()
+            };
+        }
+
+        function cloneBins(bins) {
+            return bins.map((bin) => cloneBin(bin));
+        }
+
+        function createRow() {
+            const newRow = document.createElement('tr');
+            newRow.innerHTML = `
+                <td><input type="text" class="bed-id" placeholder="e.g. 123"></td>
+                <td>
+                    <div class="inline-field">
+                        <input type="number" class="feed-volume" min="0" step="1" placeholder="30">
+                        <span class="unit">ml</span>
+                        <span class="unit">x</span>
+                        <input type="number" class="feed-count" min="0" step="1" placeholder="8">
+                        <span class="unit">feeds</span>
+                    </div>
+                </td>
+                <td>
+                    <div class="inline-field">
+                        <input type="number" class="ebm-volume" min="0" step="1" placeholder="20">
+                        <span class="unit">ml</span>
+                        <span class="unit">x</span>
+                        <input type="number" class="ebm-count" min="0" step="1" placeholder="8">
+                        <span class="unit">bottles</span>
+                    </div>
+                </td>
+                <td>
+                    <div><span class="total-ebm">0</span> ml</div>
+                    <div class="subtext ebm-used">0 bottle(s) used</div>
+                </td>
+                <td>
+                    <div><span class="pdbm-total">0</span> ml</div>
+                    <div class="subtext pdbm-feed-count">0 feed(s) need PDBM</div>
+                </td>
+                <td>
+                    <div><span class="pdbm-bottles">0 / 0</span></div>
+                    <div class="subtext">50 ml / 125 ml</div>
+                </td>
+                <td class="row-note"></td>
+                <td class="no-print"><button class="remove-btn">Remove</button></td>
+            `;
+            return newRow;
+        }
+
         tableBody.addEventListener('input', updateCalculations);
 
         document.getElementById('add-baby').addEventListener('click', () => {
-            const newRow = document.createElement('tr');
-            newRow.innerHTML = `
-                <td><input type="text" class="baby-id" placeholder="e.g. Baby B"></td>
-                <td><input type="number" class="feeding" min="0" value="0"></td>
-                <td><input type="number" class="ebm" min="0" value="0"></td>
-                <td class="pdbm">0</td>
-                <td class="no-print"><button class="remove-btn">Remove</button></td>
-            `;
-            tableBody.appendChild(newRow);
+            tableBody.appendChild(createRow());
             updateCalculations();
         });
 
-        tableBody.addEventListener('click', e => {
-            if (e.target.classList.contains('remove-btn')) {
+        document.getElementById('clear-all').addEventListener('click', () => {
+            tableBody.querySelectorAll('input').forEach((input) => {
+                input.value = '';
+            });
+            updateCalculations();
+        });
+
+        tableBody.addEventListener('click', (event) => {
+            if (event.target.classList.contains('remove-btn')) {
                 if (tableBody.children.length > 1) {
-                    e.target.closest('tr').remove();
+                    event.target.closest('tr').remove();
                     updateCalculations();
                 } else {
-                    alert("At least one baby row must remain.");
+                    alert('At least one baby row must remain.');
                 }
             }
         });
 
         document.getElementById('print-btn').addEventListener('click', () => window.print());
 
-        // Initial calculation
         updateCalculations();
     </script>
 </body>
